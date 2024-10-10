@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import "forge-std/Test.sol";
 import "../src/OrderBook.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {Test, console} from "forge-std/Test.sol";
 
 contract TokenA is ERC20 {
     constructor() ERC20("TokenA", "TKA") {
@@ -156,73 +157,84 @@ contract OrderBookTest is Test {
         assertEq(tokenB.balanceOf(user1), 99 ether);
     }
 
-    function test_placeBuyOrder_NotEnoughtToken() public {
-        // User 1 set order to sell 50 tokenA for 1 tokenB
-        uint amountOfTokenAToBuy = 50 ether;
-        uint targetPriceTokenB = 1 ether;
+    function test_placeOrder_BuyTokenA_NotEnoughtToken() public {
+        // User 2 set order to buy 100 tokenA for 2 tokenB
+        uint amountOfTokenAToBuy = 100 ether;
+        uint targetPriceTokenB = 2 ether;
         vm.startPrank(user2);
-        tokenA.approve(address(orderBook), amountOfTokenAToBuy);
+        tokenB.approve(address(orderBook), targetPriceTokenB);
         vm.expectRevert(
             abi.encodeWithSignature(
                 "ERC20InsufficientBalance(address,uint256,uint256)",
                 user2,
-                targetPriceTokenB,
-                amountOfTokenAToBuy
+                1 ether,
+                targetPriceTokenB
             )
         );
         orderBook.placeOrder(
             true,
             amountOfTokenAToBuy,
             targetPriceTokenB,
+            true
+        );
+        vm.stopPrank();
+    }
+
+    function test_placeOrder_SellTokenA_NotEnoughtToken() public {
+        // User 2 set order to sell 50 tokenA for 1 tokenB
+        uint amountOfTokenAToSell = 50 ether;
+        uint targetPriceTokenB = 1 ether;
+        vm.startPrank(user2);
+        tokenA.approve(address(orderBook), amountOfTokenAToSell);
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "ERC20InsufficientBalance(address,uint256,uint256)",
+                user2,
+                targetPriceTokenB,
+                amountOfTokenAToSell
+            )
+        );
+        orderBook.placeOrder(
+            true,
+            amountOfTokenAToSell,
+            targetPriceTokenB,
             false
         );
         vm.stopPrank();
     }
 
-    // function test_placeSellOrder_NotEnoughtTokenB() public {
-    //     uint amount = 50 ether;
-    //     vm.startPrank(user2);
-    //     tokenA.approve(address(orderBook), amount);
-    //     vm.expectRevert(
-    //         abi.encodeWithSignature(
-    //             "ERC20InsufficientBalance(address,uint256,uint256)",
-    //             user2,
-    //             1 ether,
-    //             amount
-    //         )
-    //     );
-    //     orderBook.placeOrder(amount, 1 ether, false);
-    //     vm.stopPrank();
-    // }
+    function test_MatchOrder_BuyTokenB() public {
+        // User 1 set order to buy 1 tokenB for 50 tokenA
+        uint amountOfTokenBToBuy = 1 ether;
+        uint targetPriceTokenA = 50 ether;
+        vm.startPrank(user1);
+        tokenA.approve(address(orderBook), targetPriceTokenA);
+        orderBook.placeOrder(
+            false,
+            amountOfTokenBToBuy,
+            targetPriceTokenA,
+            true
+        );
+        vm.stopPrank();
 
-    // function test_MatchOrder() public {
-    //     vm.startPrank(user1);
-    //     uint amount = 50 ether;
-    //     uint price = 1 ether;
-    //     tokenB.approve(address(orderBook), amount);
-    //     orderBook.placeOrder(amount, price, true);
-    //     vm.stopPrank();
+        // User 2 set order to buy 50 tokenA for 1 tokenB
+        vm.startPrank(user2);
+        uint amountOfTokenAToBuy = 50 ether;
+        uint targetPriceTokenB = 1 ether;
+        tokenB.approve(address(orderBook), targetPriceTokenB);
+        orderBook.placeOrder(
+            true,
+            amountOfTokenAToBuy,
+            targetPriceTokenB,
+            true
+        );
+        vm.stopPrank();
 
-    //     vm.startPrank(user2);
-    //     tokenA.approve(address(orderBook), price);
-    //     orderBook.matchOrder(0);
-    //     vm.stopPrank();
+        //check balance of user1 and user2 according to their buy / sell
+        assertEq(tokenA.balanceOf(user1), 50 ether);
+        assertEq(tokenB.balanceOf(user1), 101 ether);
 
-    //     //check balance of user1 and user2 according to their buy / sell
-    //     assertEq(tokenA.balanceOf(user1), 100 ether);
-    //     assertEq(tokenB.balanceOf(user1), 50 ether);
-
-    //     assertEq(tokenA.balanceOf(user2), 1 ether);
-    //     assertEq(tokenB.balanceOf(user2), 51 ether);
-    // }
-
-    // function test_MatchOrder_CannotMatchYourOwnOrder() public {
-    //     vm.startPrank(user1);
-    //     uint amount = 50 ether;
-    //     tokenA.approve(address(orderBook), amount);
-    //     orderBook.placeOrder(amount, 1 ether, false);
-    //     vm.expectRevert("Cannot match your own order");
-    //     orderBook.matchOrder(0);
-    //     vm.stopPrank();
-    // }
+        assertEq(tokenA.balanceOf(user2), 51 ether);
+        assertEq(tokenB.balanceOf(user2), 0 ether);
+    }
 }

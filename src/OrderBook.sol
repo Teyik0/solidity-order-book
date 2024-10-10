@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Test, console} from "forge-std/Test.sol";
 
 contract OrderBook {
     IERC20 public tokenA; // token to buy
@@ -41,6 +42,29 @@ contract OrderBook {
         uint256 _price,
         bool _isBuy
     ) external {
+        // Check for opposite orders and match if found
+        for (uint256 i = 0; i < orders.length; i++) {
+            Order memory existingOrder = orders[i];
+            if (
+                existingOrder.orderTokenA == _orderTokenA &&
+                existingOrder.isBuy != _isBuy &&
+                existingOrder.price == _price &&
+                existingOrder.amount == _amount
+            ) {
+                _matchOrder(i);
+                return;
+            }
+            if (
+                existingOrder.orderTokenA != _orderTokenA &&
+                existingOrder.isBuy == _isBuy &&
+                existingOrder.price == _amount &&
+                existingOrder.amount == _price
+            ) {
+                _matchOrder(i);
+                return;
+            }
+        }
+
         if (_orderTokenA) {
             if (_isBuy) {
                 tokenB.transferFrom(msg.sender, address(this), _price);
@@ -64,23 +88,59 @@ contract OrderBook {
         return orders[_orderIndex];
     }
 
-    function matchOrder(uint256 _orderIndex) external {
+    function _matchOrder(uint256 _orderIndex) internal {
         Order memory order = orders[_orderIndex];
         require(order.user != msg.sender, "Cannot match your own order");
 
-        // in first the user pay to see if he has enough token and only then get his token
-        // that we already know the contract has enought token
-        if (order.isBuy) {
-            tokenA.transferFrom(msg.sender, order.user, order.price);
-            tokenB.approve(address(this), order.amount);
-            tokenB.transferFrom(address(this), msg.sender, order.amount);
+        // firstly, the user pay to see if he has enough token and only then get his token
+        // that we already know the contract has already blocked
+        if (order.orderTokenA) {
+            if (order.isBuy) {
+                tokenA.transferFrom(msg.sender, order.user, order.amount);
+                tokenB.approve(address(this), order.price);
+                tokenB.transferFrom(address(this), msg.sender, order.price);
+            } else {
+                tokenB.transferFrom(order.user, order.user, order.amount);
+                tokenA.approve(address(this), order.price);
+                tokenA.transferFrom(address(this), msg.sender, order.price);
+            }
         } else {
-            tokenB.transferFrom(order.user, order.user, order.price);
-            tokenA.approve(address(this), order.amount);
-            tokenA.transferFrom(address(this), msg.sender, order.amount);
+            if (order.isBuy) {
+                tokenB.transferFrom(msg.sender, order.user, order.amount);
+                tokenA.approve(address(this), order.price);
+                tokenA.transferFrom(address(this), msg.sender, order.price);
+            } else {
+                tokenA.transferFrom(order.user, order.user, order.amount);
+                tokenB.approve(address(this), order.price);
+                tokenB.transferFrom(address(this), msg.sender, order.price);
+            }
         }
 
         emit OrderMatched(msg.sender, order.user, order.amount, order.price);
+        delete orders[_orderIndex];
+    }
+
+    function cancelOrder(uint256 _orderIndex) external {
+        Order memory order = orders[_orderIndex];
+        require(
+            order.user == msg.sender,
+            "Only the order creator can cancel the order"
+        );
+
+        if (order.orderTokenA) {
+            if (order.isBuy) {
+                tokenB.transfer(msg.sender, order.price);
+            } else {
+                tokenA.transfer(msg.sender, order.amount);
+            }
+        } else {
+            if (order.isBuy) {
+                tokenA.transfer(msg.sender, order.price);
+            } else {
+                tokenB.transfer(msg.sender, order.amount);
+            }
+        }
+
         delete orders[_orderIndex];
     }
 }
